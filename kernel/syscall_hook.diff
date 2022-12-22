@@ -7,7 +7,7 @@ index 24a4c1b97bb0..5449ee659860 100644
  PATCHLEVEL = 8
  SUBLEVEL = 0
 -EXTRAVERSION =
-+EXTRAVERSION =-bpf-storage-syscall
++EXTRAVERSION =-bpfsyscall
  NAME = Kleptomaniac Octopus
  
  # *DOCUMENTATION*
