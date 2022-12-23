@@ -17,7 +17,7 @@
 #include <string.h>
 #include <sched.h>
 
-#define __NR_set_bpf_level 440
+#define __NR_set_bpf_level 460
 
 #define PAGE_SHIFT 12
 #define PAGE_SIZE (1 << PAGE_SHIFT)

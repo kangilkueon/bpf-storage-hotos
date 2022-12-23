@@ -1537,4 +1537,8 @@ static __always_inline int __bpf_xdp_redirect_map(struct bpf_map *map, u32 ifind
 	return XDP_REDIRECT;
 }
 
+struct bpf_storage_kern {
+	char data[512];
+};
+
 #endif /* __LINUX_FILTER_H__ */

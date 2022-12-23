@@ -21,6 +21,8 @@
 #include <linux/mount.h>
 #include <linux/fs.h>
 #include "internal.h"
+#include <linux/bpf.h>
+#include <linux/filter.h>
 
 #include <linux/uaccess.h>
 #include <asm/unistd.h>
@@ -618,9 +620,63 @@ ssize_t ksys_read(unsigned int fd, char __user *buf, size_t count)
 	return ret;
 }
 
+extern struct bpf_prog __rcu *_bpf_prog;
+extern struct bpf_storage_kern _bpf_g_context;
+
 SYSCALL_DEFINE3(read, unsigned int, fd, char __user *, buf, size_t, count)
 {
-	return ksys_read(fd, buf, count);
+	struct fd f;
+	int _bpf_level;
+	loff_t pos, *ppos;
+
+	/* check bpf level info */
+	f = fdget_pos(fd);
+	if (!f.file) {
+		return -EBADF;
+	}
+	_bpf_level = f.file->_bpf_level;
+	ppos = file_ppos(f.file);
+	if (ppos) {
+		pos = *ppos;
+	}
+	fdput_pos(f);
+
+	if (_bpf_level == 0) {
+		/* normal read */
+		return ksys_read(fd, buf, count);
+	} else {
+		/* bpf read with resubmission */
+		if (!ppos) {
+			printk("bpf read: invalid offset\n");
+			return -EBADF;
+		}
+		long index = pos >> 12;
+		int i;
+		struct bpf_prog *_local_bpf_prog;
+		u32 _bpf_return;
+		for (i = 0; i < _bpf_level; ++i) {
+			if (i > 0) {
+				rcu_read_lock();
+				_local_bpf_prog = rcu_dereference(_bpf_prog);
+				if (_local_bpf_prog) {
+					_bpf_return = bpf_prog_run(_local_bpf_prog, &_bpf_g_context);
+				}
+				rcu_read_unlock();
+			}
+			off_t lseek_ret = ksys_lseek(fd, index << 12, SEEK_SET);
+			if (lseek_ret != index << 12) {
+				printk("bpf read: ksys_lseek failed\n");
+				return -EBADF;
+			}
+			ssize_t read_ret = ksys_read(fd, buf, count);
+			if (read_ret != count) {
+				printk("bpf read: ksys_read failed\n");
+				return -EBADF;
+			}
+			index = (index * 1103515245 + 12345) % (1 << 23);  /* randomly choose next offset */
+		}
+		return count;
+	}
 }
 
 ssize_t ksys_write(unsigned int fd, const char __user *buf, size_t count)

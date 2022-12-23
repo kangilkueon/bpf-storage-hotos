@@ -22,6 +22,8 @@
 #include <linux/mount.h>
 #include <linux/fscrypt.h>
 #include <linux/fileattr.h>
+#include <linux/bpf.h>
+#include <linux/filter.h>
 
 #include "internal.h"
 
@@ -873,6 +875,57 @@ out:
 	fdput(f);
 	return error;
 }
+
+SYSCALL_DEFINE2(set_bpf_level, int, fd, int, level)
+{
+	struct fd f = fdget_pos(fd);
+	long ret = -EBADF;
+
+	if (f.file) {
+		f.file->_bpf_level = level;
+		fdput_pos(f);
+		ret = 0;
+	} else {
+		printk("set_bpf_level: bad file descriptor\n");
+	}
+
+	return ret;
+}
+
+struct bpf_prog __rcu *_bpf_prog;
+EXPORT_SYMBOL(_bpf_prog);
+
+struct bpf_storage_kern _bpf_g_context;
+EXPORT_SYMBOL(_bpf_g_context);
+
+int _storage_bpf_prog_attach(const union bpf_attr *attr, struct bpf_prog *prog)
+{
+	rcu_assign_pointer(_bpf_prog, prog);
+	return 0;
+}
+
+int _storage_bpf_prog_detach(const union bpf_attr *attr)
+{
+	rcu_assign_pointer(_bpf_prog, NULL);
+	return 0;
+}
+
+const struct bpf_prog_ops storage_prog_ops = {};
+
+static const struct bpf_func_proto *
+storage_func_proto(enum bpf_func_id func_id, const struct bpf_prog *prog)
+{
+	return bpf_base_func_proto(func_id);
+}
+
+static bool storage_is_valid_access(int off, int size, enum bpf_access_type type, const struct bpf_prog *prog, struct bpf_insn_access_aux *info){
+	return true;
+}
+
+const struct bpf_verifier_ops storage_verifier_ops = {
+	.get_func_proto = storage_func_proto,
+	.is_valid_access = storage_is_valid_access,
+};
 
 #ifdef CONFIG_COMPAT
 /**

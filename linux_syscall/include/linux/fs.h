@@ -947,6 +947,8 @@ struct file {
 	struct inode		*f_inode;	/* cached value */
 	const struct file_operations	*f_op;
 
+	int _bpf_level;
+
 	/*
 	 * Protects f_ep, f_flags.
 	 * Must not be taken from IRQ context.

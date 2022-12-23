@@ -951,7 +951,8 @@ enum bpf_prog_type {
 	BPF_PROG_TYPE_EXT,
 	BPF_PROG_TYPE_LSM,
 	BPF_PROG_TYPE_SK_LOOKUP,
-	BPF_PROG_TYPE_SYSCALL, /* a program that can execute syscalls */
+	BPF_PROG_TYPE_SYSCALL,
+	BPF_PROG_TYPE_STORAGE, /* a program that can execute syscalls */
 };
 
 enum bpf_attach_type {
@@ -999,6 +1000,7 @@ enum bpf_attach_type {
 	BPF_PERF_EVENT,
 	BPF_TRACE_KPROBE_MULTI,
 	BPF_LSM_CGROUP,
+	BPF_STORAGE,
 	__MAX_BPF_ATTACH_TYPE
 };
 
@@ -6725,6 +6727,10 @@ struct bpf_sockopt {
 struct bpf_pidns_info {
 	__u32 pid;
 	__u32 tgid;
+};
+
+struct bpf_storage {
+	char data[512];
 };
 
 /* User accessible data for SK_LOOKUP programs. Add new fields at the end. */
