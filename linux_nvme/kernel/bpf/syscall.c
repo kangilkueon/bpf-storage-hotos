@@ -3517,6 +3517,9 @@ static int bpf_prog_attach(const union bpf_attr *attr)
 	case BPF_PROG_TYPE_STORAGE:
 		ret = _storage_bpf_prog_attach(attr, prog);
 		break;
+	case BPF_PROG_TYPE_STORAGE:
+		ret = _storage_bpf_prog_attach(attr, prog);
+		break;
 	default:
 		ret = -EINVAL;
 	}

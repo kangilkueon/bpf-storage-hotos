@@ -673,6 +673,10 @@ static inline bool nvme_try_complete_req(struct request *req, __le16 status,
 		union nvme_result result)
 {
 	struct nvme_request *rq = nvme_req(req);
+	if (req->_bpf_command) {
+		kfree(req->_bpf_command);
+		req->_bpf_command = NULL;
+	}
 	struct nvme_ctrl *ctrl = rq->ctrl;
 
 	if (!(ctrl->quirks & NVME_QUIRK_SKIP_CID_GEN))

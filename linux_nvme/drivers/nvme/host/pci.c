@@ -28,6 +28,8 @@
 #include <linux/io-64-nonatomic-hi-lo.h>
 #include <linux/sed-opal.h>
 #include <linux/pci-p2pdma.h>
+#include <linux/bpf.h>
+#include <linux/filter.h>
 
 #include "trace.h"
 #include "nvme.h"
@@ -902,6 +904,12 @@ static blk_status_t nvme_prep_rq(struct nvme_dev *dev, struct request *req)
 	iod->npages = -1;
 	iod->sgt.nents = 0;
 
+	if (req->bio && req->bio->_bpf_level > 0) {
+		req->_bpf_command = &iod->cmd;
+	} else {
+		req->_bpf_command = NULL;
+	}
+
 	ret = nvme_setup_cmd(req->q->queuedata, req);
 	if (ret)
 		return ret;
@@ -961,7 +969,8 @@ static blk_status_t nvme_queue_rq(struct blk_mq_hw_ctx *hctx,
 
 static void nvme_submit_cmds(struct nvme_queue *nvmeq, struct request **rqlist)
 {
-	spin_lock(&nvmeq->sq_lock);
+	unsigned long flags;
+	spin_lock_irqsave(&nvmeq->sq_lock, flags);
 	while (!rq_list_empty(*rqlist)) {
 		struct request *req = rq_list_pop(rqlist);
 		struct nvme_iod *iod = blk_mq_rq_to_pdu(req);
@@ -969,7 +978,7 @@ static void nvme_submit_cmds(struct nvme_queue *nvmeq, struct request **rqlist)
 		nvme_sq_copy_cmd(nvmeq, &iod->cmd);
 	}
 	nvme_write_sq_db(nvmeq, true);
-	spin_unlock(&nvmeq->sq_lock);
+	spin_unlock_irqrestore(&nvmeq->sq_lock, flags);
 }
 
 static bool nvme_prep_rq_batch(struct nvme_queue *nvmeq, struct request *req)
@@ -1064,12 +1073,18 @@ static inline struct blk_mq_tags *nvme_queue_tagset(struct nvme_queue *nvmeq)
 	return nvmeq->dev->tagset.tags[nvmeq->qid - 1];
 }
 
+extern struct bpf_prog __rcu *_bpf_prog;
+extern struct bpf_storage_kern _bpf_g_context;
+
 static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 				   struct io_comp_batch *iob, u16 idx)
 {
 	struct nvme_completion *cqe = &nvmeq->cqes[idx];
 	__u16 command_id = READ_ONCE(cqe->command_id);
 	struct request *req;
+	long _index;
+	struct bpf_prog *_local_bpf_prog;
+	u32 _bpf_return;
 
 	/*
 	 * AEN requests are special as they don't time out and can
@@ -1092,6 +1107,36 @@ static inline void nvme_handle_cqe(struct nvme_queue *nvmeq,
 	}
 
 	trace_nvme_sq(req, cqe->sq_head, nvmeq->sq_tail);
+
+	// TODO
+	#if 0
+	
++
++	if (!req->bio || req->bio->_bpf_level == 0) {
++		nvme_end_request(req, cqe->status, cqe->result);
++	} else {
++		++req->bio->_bpf_count;
++		if (req->bio->_bpf_count < req->bio->_bpf_level) {
++			/* resubmit another request */
++			rcu_read_lock();
++			_local_bpf_prog = rcu_dereference(_bpf_prog);
++			if (_local_bpf_prog) {
++				/* run bpf program if present */
++				_bpf_return = BPF_PROG_RUN(_local_bpf_prog, &_bpf_g_context);
++			}
++			rcu_read_unlock();
++			_index = req->bio->bi_iter.bi_sector >> (12 - 9);
++			_index = (_index * 1103515245 + 12345) % (1 << 23);  /* randomly choose the next offset */
++			req->bio->bi_iter.bi_sector = _index << (12 - 9);
++			req->__sector = req->bio->bi_iter.bi_sector + req->bio->_bpf_partition_start_sector;
++			req->_bpf_command->rw.slba = cpu_to_le64(nvme_sect_to_lba(req->q->queuedata, blk_rq_pos(req)));
++			nvme_submit_cmd(nvmeq, req->_bpf_command, true);
++		} else {
++			/* complete this IO chain */
++			nvme_end_request(req, cqe->status, cqe->result);
++		}
++	}
+#endif
 	if (!nvme_try_complete_req(req, cqe->status, cqe->result) &&
 	    !blk_mq_add_to_batch(req, iob, nvme_req(req)->status,
 					nvme_pci_complete_batch))

@@ -328,6 +328,9 @@ static loff_t iomap_dio_bio_iter(const struct iomap_iter *iter,
 		bio->bi_private = dio;
 		bio->bi_end_io = iomap_dio_bio_end_io;
 
+		bio->_bpf_level = dio->iocb->ki_filp->_bpf_level;
+		bio->_bpf_partition_start_sector = 0;
+
 		ret = bio_iov_iter_get_pages(bio, dio->submit.iter);
 		if (unlikely(ret)) {
 			/*
